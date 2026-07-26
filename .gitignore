@@ -1,10 +1,41 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Virtual environment
+.venv/
+venv/
+env/
 
-# Virtual environments
-.venv
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# HuggingFace cache / models
+.cache/
+.cache/huggingface/
+huggingface_cache/
+
+# Model weights
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# PyTorch checkpoints
+checkpoints/
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test cache
+.pytest_cache/
+
+# Python package metadata
+*.egg-info/
