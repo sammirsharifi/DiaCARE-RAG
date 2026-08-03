@@ -1,19 +1,21 @@
 from explainable_graphrag.pipeline.pipeline import GraphRAGPipeline
 
-
 from explainable_graphrag.kg.graph_manager import GraphManager
 from explainable_graphrag.kg.node_mapper import NodeMapper
 
-
+from explainable_graphrag.retrieval.entity_extractor import EntityExtractor
 from explainable_graphrag.retrieval.sapbert_linker import SapBERTLinker
-
+from explainable_graphrag.retrieval.subgraph_retriever import SubgraphRetriever
+from explainable_graphrag.retrieval.evidence_builder import EvidenceBuilder
 
 from explainable_graphrag.llm.model import SmallLLM
 
 
-
 def build_pipeline():
 
+    ####################################################
+    # 1. Load Knowledge Graph
+    ####################################################
 
     graph = GraphManager(
         "kg/Diabetes_large.owl"
@@ -21,11 +23,27 @@ def build_pipeline():
 
 
 
+    ####################################################
+    # 2. Node Mapper
+    ####################################################
+
     mapper = NodeMapper(
         graph
     )
 
 
+
+    ####################################################
+    # 3. Entity Extractor
+    ####################################################
+
+    extractor = EntityExtractor()
+
+
+
+    ####################################################
+    # 4. Entity Linker
+    ####################################################
 
     linker = SapBERTLinker(
         graph
@@ -33,9 +51,32 @@ def build_pipeline():
 
 
 
+    ####################################################
+    # 5. Subgraph Retriever
+    ####################################################
+
+    retriever = SubgraphRetriever(
+        graph
+    )
+
+
+
+    ####################################################
+    # 6. Evidence Builder
+    ####################################################
+
+    evidence_builder = EvidenceBuilder(
+        mapper
+    )
+
+
+
+    ####################################################
+    # 7. LLM
+    ####################################################
+
     llm = SmallLLM(
-        model_name=
-        "Qwen/Qwen2.5-0.5B-Instruct"
+        model_name="Qwen/Qwen2.5-0.5B-Instruct"
     )
 
 
@@ -43,13 +84,23 @@ def build_pipeline():
 
 
 
+    ####################################################
+    # 8. Pipeline
+    ####################################################
+
     pipeline = GraphRAGPipeline(
 
         graph=graph,
 
         mapper=mapper,
 
+        extractor=extractor,
+
         linker=linker,
+
+        retriever=retriever,
+
+        evidence_builder=evidence_builder,
 
         llm=llm,
 
@@ -57,8 +108,6 @@ def build_pipeline():
 
 
     return pipeline
-
-
 
 
 
@@ -70,8 +119,7 @@ def test_pipeline():
 
 
     question = (
-        "What are the main risk factors "
-        "for type 2 diabetes?"
+        "What are the major risk factors and complications of Type 2 diabetes"
     )
 
 
@@ -82,32 +130,51 @@ def test_pipeline():
 
 
 
-    print(
-        "\n========== PIPELINE RESULT =========="
-    )
+    print("\n")
+    print("=" * 80)
+    print("FINAL PIPELINE RESULT")
+    print("=" * 80)
 
 
-    print(
-        "QUESTION:"
-    )
 
+    print("\nQUESTION:")
     print(
         result["question"]
     )
 
 
-    print(
-        "\nENTITIES:"
-    )
 
-    print(
-        result["entities"]
-    )
+    print("\nEXTRACTED MENTIONS:")
+
+    for mention in result["mentions"]:
+
+        print(
+            mention
+        )
 
 
-    print(
-        "\nSUBGRAPH:"
-    )
+
+    print("\nLINKED ENTITIES:")
+
+    for entity in result["linked_entities"]:
+
+        print(
+            entity
+        )
+
+
+
+    print("\nNODE IDS:")
+
+    for node in result["node_ids"]:
+
+        print(
+            node
+        )
+
+
+
+    print("\nSUBGRAPH:")
 
     print(
         "Nodes:",
@@ -121,18 +188,24 @@ def test_pipeline():
     )
 
 
+
+    print("\nEVIDENCE:")
+
     print(
-        "\nPROMPT:"
+        result["evidence"]
     )
+
+
+
+    print("\nPROMPT:")
 
     print(
         result["prompt"]
     )
 
 
-    print(
-        "\nANSWER:"
-    )
+
+    print("\nANSWER:")
 
     print(
         result["answer"]
@@ -140,8 +213,16 @@ def test_pipeline():
 
 
 
+    ####################################################
+    # Assertions
+    ####################################################
+
     assert result is not None
 
     assert "answer" in result
 
     assert result["answer"] is not None
+
+    assert "linked_entities" in result
+
+    assert "subgraph" in result

@@ -34,11 +34,15 @@ def test_subgraph_retrieval():
 
     query_nodes = [
 
-        "73211009",
-
         "44054006",
 
-        "230690007",
+        "C_Type2Diabetes",
+
+        "DiabetesPedigreeFunction",
+
+        "DiabeticPatient",
+
+        "DiabeticGlucose"
 
     ]
 

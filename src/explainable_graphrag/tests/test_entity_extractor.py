@@ -15,8 +15,7 @@ def test_entity_extractor():
     extractor = EntityExtractor()
 
     query = (
-        "Can obesity increase the risk of type 2 diabetes "
-        "in elderly patients with hypertension?"
+       " What are the main risk factors for type 2 diabetes?"
     )
 
     entities = extractor.extract(query)

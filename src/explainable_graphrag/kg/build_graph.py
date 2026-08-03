@@ -8,7 +8,7 @@ class OntologyGraphBuilder:
 
     def build(self):
 
-        G = nx.DiGraph()
+        G = nx.MultiDiGraph()
 
         # -----------------------------
         # Add Classes

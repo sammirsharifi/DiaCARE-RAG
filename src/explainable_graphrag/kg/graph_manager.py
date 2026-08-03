@@ -92,6 +92,14 @@ class GraphManager:
                 "Graph loaded successfully."
             )
 
+            logger.info(
+                f"Graph type: {type(graph)}"
+            )
+
+            logger.info(
+                f"Is MultiGraph: {graph.is_multigraph()}"
+            )
+
             return graph
 
         # --------------------------------------------------------------

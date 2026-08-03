@@ -13,8 +13,10 @@ logger = get_logger(__name__)
 
 class SubgraphRetriever:
     """
-    Build an approximate evidence subgraph connecting
-    ontology entities using Steiner Tree.
+    Retrieve evidence subgraph from ontology graph.
+
+    Supports disconnected query entities by
+    processing each connected component separately.
     """
 
 
@@ -22,16 +24,9 @@ class SubgraphRetriever:
         self,
         graph: nx.MultiDiGraph,
     ):
-        """
-        Initialize subgraph retriever.
-
-        Parameters
-        ----------
-        graph:
-            Ontology knowledge graph.
-        """
 
         self.graph = graph
+
 
 
     ##############################################################
@@ -41,12 +36,12 @@ class SubgraphRetriever:
         node_ids: list[str],
     ) -> nx.MultiDiGraph:
         """
-        Retrieve evidence subgraph connecting query entities.
+        Retrieve evidence graph.
 
         Parameters
         ----------
         node_ids:
-            Ontology node identifiers.
+            Linked ontology node ids.
 
         Returns
         -------
@@ -56,13 +51,17 @@ class SubgraphRetriever:
 
 
         logger.info(
-            "Starting evidence subgraph retrieval..."
+            "=" * 60
+        )
+
+        logger.info(
+            "START SUBGRAPH RETRIEVAL"
         )
 
 
-        ##########################################################
+        ##################################################
         # Validate nodes
-        ##########################################################
+        ##################################################
 
         valid_nodes = [
 
@@ -76,154 +75,282 @@ class SubgraphRetriever:
 
 
         logger.info(
-            f"Requested Nodes : {len(node_ids)}"
+            "Requested nodes : %d",
+            len(node_ids)
         )
-
-        logger.info(
-            f"Valid Nodes     : {len(valid_nodes)}"
-        )
-
-
-        if len(valid_nodes) < 2:
-
-            raise ValueError(
-                "At least two valid ontology nodes are required."
-            )
-
-
-        ##########################################################
-        # Prepare graph for Steiner
-        ##########################################################
-
-        logger.info(
-            "Preparing graph for Steiner Tree..."
-        )
-
-
-        undirected = nx.Graph(
-            self.graph.to_undirected()
-        )
-
-
-        ##########################################################
-        # Find connected component
-        ##########################################################
-
-        logger.info(
-            "Finding query connected component..."
-        )
-
-
-        with Timer(
-            logger,
-            "Connected Component Search",
-        ):
-
-
-            query_component = None
-
-
-            for component in nx.connected_components(
-                undirected
-            ):
-
-                if all(
-                    node in component
-                    for node in valid_nodes
-                ):
-
-                    query_component = component
-
-                    break
-
-
-
-        if query_component is None:
-
-            raise ValueError(
-                "Query nodes are not in the same connected component."
-            )
 
 
         logger.info(
-            f"Component Nodes : {len(query_component)}"
-        )
-
-
-        undirected = undirected.subgraph(
-            query_component
-        ).copy()
-
-
-
-        ##########################################################
-        # Steiner Tree
-        ##########################################################
-
-        logger.info(
-            "Building approximate Steiner tree..."
-        )
-
-
-        with Timer(
-            logger,
-            "Steiner Tree",
-        ):
-
-            tree = steiner_tree(
-                undirected,
-                valid_nodes,
-            )
-
-
-
-        ##########################################################
-        # Recover directed evidence graph
-        ##########################################################
-
-        logger.info(
-            "Recovering directed evidence graph..."
+            "Valid nodes     : %d",
+            len(valid_nodes)
         )
 
 
         evidence = nx.MultiDiGraph()
 
 
+        if not valid_nodes:
 
-        ##########################################################
-        # Add nodes
-        ##########################################################
+            logger.warning(
+                "No valid nodes found."
+            )
 
-        for node in tree.nodes():
+            return evidence
 
-            evidence.add_node(
 
-                node,
 
-                **self.graph.nodes[node],
+        ##################################################
+        # Convert graph
+        ##################################################
 
+        undirected = nx.Graph(
+            self.graph.to_undirected()
+        )
+
+
+        ##################################################
+        # Find connected components
+        ##################################################
+
+        components = list(
+            nx.connected_components(
+                undirected
+            )
+        )
+
+
+        logger.info(
+            "Graph components : %d",
+            len(components)
+        )
+
+
+
+        processed = set()
+
+
+
+        ##################################################
+        # Process every component separately
+        ##################################################
+
+        for node in valid_nodes:
+
+
+            component = None
+
+
+            for c in components:
+
+                if node in c:
+
+                    component = c
+                    break
+
+
+
+            if component is None:
+
+                logger.warning(
+                    "No component found for node %s",
+                    node
+                )
+
+                continue
+
+
+
+            component_key = id(component)
+
+
+
+            if component_key in processed:
+
+                continue
+
+
+
+            processed.add(
+                component_key
             )
 
 
 
-        ##########################################################
-        # Add edges
-        ##########################################################
+            ##################################################
+            # Query nodes inside this component
+            ##################################################
 
-        for u, v in tree.edges():
+            component_query_nodes = [
 
+                n
 
-            ######################################################
-            # Original direction
-            ######################################################
+                for n in valid_nodes
 
-            if self.graph.has_edge(u, v):
+                if n in component
 
-
-                for _, edge_data in self.graph[u][v].items():
+            ]
 
 
-                    if isinstance(edge_data, dict):
+
+            logger.info(
+                "Processing component"
+            )
+
+
+            logger.info(
+                "Component size : %d",
+                len(component)
+            )
+
+
+            logger.info(
+                "Query nodes    : %d",
+                len(component_query_nodes)
+            )
+
+
+
+            ##################################################
+            # Single node case
+            ##################################################
+
+            if len(component_query_nodes) == 1:
+
+                node = component_query_nodes[0]
+
+                # Add the node
+                evidence.add_node(
+                    node,
+                    **self.graph.nodes[node]
+                )
+
+                # Outgoing edges
+                for _, neighbor, key, data in self.graph.out_edges(
+                    node,
+                    keys=True,
+                    data=True,
+                ):
+                    evidence.add_node(
+                        neighbor,
+                        **self.graph.nodes[neighbor]
+                    )
+                    evidence.add_edge(
+                        node,
+                        neighbor,
+                        key=key,
+                        **data,
+                    )
+
+                # Incoming edges
+                for neighbor, _, key, data in self.graph.in_edges(
+                    node,
+                    keys=True,
+                    data=True,
+                ):
+                    evidence.add_node(
+                        neighbor,
+                        **self.graph.nodes[neighbor]
+                    )
+                    evidence.add_edge(
+                        neighbor,
+                        node,
+                        key=key,
+                        **data,
+                    )
+
+                logger.info(
+                    "Single node with neighborhood added : %s",
+                    node
+                )
+
+                continue
+
+
+
+
+            ##################################################
+            # Steiner tree
+            ##################################################
+
+            logger.info(
+                "Building Steiner Tree..."
+            )
+
+
+            component_graph = (
+                undirected
+                .subgraph(component)
+                .copy()
+            )
+
+
+
+            try:
+
+                with Timer(
+                    logger,
+                    "Steiner Tree"
+                ):
+
+                    tree = steiner_tree(
+
+                        component_graph,
+
+                        component_query_nodes
+
+                    )
+
+
+
+            except Exception as e:
+
+
+                logger.warning(
+                    "Steiner failed: %s",
+                    e
+                )
+
+
+                continue
+
+
+
+
+            ##################################################
+            # Add nodes
+            ##################################################
+
+            for node in tree.nodes():
+
+
+                evidence.add_node(
+
+                    node,
+
+                    **self.graph.nodes[node]
+
+                )
+
+
+
+            ##################################################
+            # Add edges
+            ##################################################
+
+            for u, v in tree.edges():
+
+
+
+                # original direction
+
+                if self.graph.has_edge(
+                    u,
+                    v
+                ):
+
+
+                    for _, data in self.graph[u][v].items():
+
 
                         evidence.add_edge(
 
@@ -231,36 +358,23 @@ class SubgraphRetriever:
 
                             v,
 
-                            **edge_data,
-
-                        )
-
-
-                    else:
-
-                        evidence.add_edge(
-
-                            u,
-
-                            v,
-
-                            relation=edge_data,
+                            **data
 
                         )
 
 
 
-            ######################################################
-            # Reverse direction
-            ######################################################
 
-            elif self.graph.has_edge(v, u):
+                # reverse direction
+
+                elif self.graph.has_edge(
+                    v,
+                    u
+                ):
 
 
-                for _, edge_data in self.graph[v][u].items():
+                    for _, data in self.graph[v][u].items():
 
-
-                    if isinstance(edge_data, dict):
 
                         evidence.add_edge(
 
@@ -268,35 +382,42 @@ class SubgraphRetriever:
 
                             u,
 
-                            **edge_data,
-
-                        )
-
-
-                    else:
-
-                        evidence.add_edge(
-
-                            v,
-
-                            u,
-
-                            relation=edge_data,
+                            **data
 
                         )
 
 
 
-        ##########################################################
+        ##################################################
+        # Final result
+        ##################################################
 
         logger.info(
-            f"Evidence Nodes : {evidence.number_of_nodes()}"
+            "=" * 60
         )
 
 
         logger.info(
-            f"Evidence Edges : {evidence.number_of_edges()}"
+            "FINAL EVIDENCE GRAPH"
         )
+
+
+        logger.info(
+            "Nodes : %d",
+            evidence.number_of_nodes()
+        )
+
+
+        logger.info(
+            "Edges : %d",
+            evidence.number_of_edges()
+        )
+
+
+        logger.info(
+            "=" * 60
+        )
+
 
 
         return evidence
