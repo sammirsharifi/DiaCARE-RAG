@@ -15,48 +15,177 @@ class SubgraphRetriever:
     """
     Retrieve evidence subgraph from ontology graph.
 
-    Supports disconnected query entities by
-    processing each connected component separately.
-    """
+    Strategy:
 
+    1. Split query nodes by connected components.
+    2. Multiple query nodes in component:
+        -> Steiner Tree retrieval.
+    3. Single query node:
+        -> Return node + all connected triples.
+    """
 
     def __init__(
         self,
         graph: nx.MultiDiGraph,
     ):
-
         self.graph = graph
 
 
+    ##############################################################
+    # Add node with all connected triples
+    ##############################################################
 
+    def _add_node_with_neighbors(
+        self,
+        evidence: nx.MultiDiGraph,
+        node: str,
+    ):
+        """
+        Add node and all connected relations.
+
+        Example:
+
+        A -- relation --> B
+
+        Adds:
+
+        (A, relation, B)
+
+        """
+
+        ##################################################
+        # Add center node
+        ##################################################
+
+        evidence.add_node(
+            node,
+            **self.graph.nodes[node]
+        )
+
+
+        ##################################################
+        # Outgoing triples
+        ##################################################
+
+        for source, target, key, data in self.graph.out_edges(
+            node,
+            keys=True,
+            data=True,
+        ):
+            logger.info(source , target , key ,data)
+
+            evidence.add_node(
+                target,
+                **self.graph.nodes[target]
+            )
+
+
+            evidence.add_edge(
+                source,
+                target,
+                key=key,
+                **data
+            )
+
+
+        ##################################################
+        # Incoming triples
+        ##################################################
+
+        for source, target, key, data in self.graph.in_edges(
+            node,
+            keys=True,
+            data=True,
+        ):
+
+            evidence.add_node(
+                source,
+                **self.graph.nodes[source]
+            )
+
+
+            evidence.add_edge(
+                source,
+                target,
+                key=key,
+                **data
+            )
+
+
+    ##############################################################
+    # Add Steiner tree edges
+    ##############################################################
+
+    def _add_tree(
+        self,
+        evidence: nx.MultiDiGraph,
+        tree: nx.Graph,
+    ):
+        """
+        Convert undirected Steiner tree
+        back to original KG triples.
+        """
+
+        for node in tree.nodes():
+
+            evidence.add_node(
+                node,
+                **self.graph.nodes[node]
+            )
+
+
+        for u, v in tree.edges():
+
+            ##################################################
+            # Original direction
+            ##################################################
+
+            if self.graph.has_edge(
+                u,
+                v
+            ):
+
+                for key, data in self.graph[u][v].items():
+
+                    evidence.add_edge(
+                        u,
+                        v,
+                        key=key,
+                        **data
+                    )
+
+
+            ##################################################
+            # Reverse direction
+            ##################################################
+
+            elif self.graph.has_edge(
+                v,
+                u
+            ):
+
+                for key, data in self.graph[v][u].items():
+
+                    evidence.add_edge(
+                        v,
+                        u,
+                        key=key,
+                        **data
+                    )
+
+
+    ##############################################################
+    # Main retrieval
     ##############################################################
 
     def retrieve(
         self,
         node_ids: list[str],
     ) -> nx.MultiDiGraph:
-        """
-        Retrieve evidence graph.
-
-        Parameters
-        ----------
-        node_ids:
-            Linked ontology node ids.
-
-        Returns
-        -------
-        nx.MultiDiGraph
-            Evidence subgraph.
-        """
 
 
-        logger.info(
-            "=" * 60
-        )
-
-        logger.info(
-            "START SUBGRAPH RETRIEVAL"
-        )
+        logger.info("=" * 60)
+        logger.info("START SUBGRAPH RETRIEVAL")
 
 
         ##################################################
@@ -64,13 +193,9 @@ class SubgraphRetriever:
         ##################################################
 
         valid_nodes = [
-
             node
-
             for node in node_ids
-
             if node in self.graph
-
         ]
 
 
@@ -81,7 +206,7 @@ class SubgraphRetriever:
 
 
         logger.info(
-            "Valid nodes     : %d",
+            "Valid nodes : %d",
             len(valid_nodes)
         )
 
@@ -92,7 +217,7 @@ class SubgraphRetriever:
         if not valid_nodes:
 
             logger.warning(
-                "No valid nodes found."
+                "No valid nodes found"
             )
 
             return evidence
@@ -100,7 +225,7 @@ class SubgraphRetriever:
 
 
         ##################################################
-        # Convert graph
+        # Undirected graph
         ##################################################
 
         undirected = nx.Graph(
@@ -109,7 +234,7 @@ class SubgraphRetriever:
 
 
         ##################################################
-        # Find connected components
+        # Connected components
         ##################################################
 
         components = list(
@@ -125,157 +250,102 @@ class SubgraphRetriever:
         )
 
 
-
         processed = set()
 
 
 
         ##################################################
-        # Process every component separately
+        # Process every component
         ##################################################
 
         for node in valid_nodes:
 
 
-            component = None
-
-
-            for c in components:
-
-                if node in c:
-
-                    component = c
-                    break
-
+            component = next(
+                (
+                    c
+                    for c in components
+                    if node in c
+                ),
+                None
+            )
 
 
             if component is None:
 
-                logger.warning(
-                    "No component found for node %s",
-                    node
-                )
-
                 continue
 
 
 
-            component_key = id(component)
+            component_id = id(component)
 
 
-
-            if component_key in processed:
+            if component_id in processed:
 
                 continue
-
 
 
             processed.add(
-                component_key
+                component_id
             )
 
 
 
             ##################################################
-            # Query nodes inside this component
+            # Query nodes inside component
             ##################################################
 
-            component_query_nodes = [
-
+            component_queries = [
                 n
-
                 for n in valid_nodes
-
                 if n in component
-
             ]
 
 
 
             logger.info(
-                "Processing component"
+                "--------------------------------"
             )
-
 
             logger.info(
                 "Component size : %d",
                 len(component)
             )
 
-
             logger.info(
-                "Query nodes    : %d",
-                len(component_query_nodes)
+                "Query nodes : %s",
+                component_queries
             )
 
 
 
             ##################################################
-            # Single node case
+            # CASE 1:
+            # Single node
             ##################################################
 
-            if len(component_query_nodes) == 1:
+            if len(component_queries) == 1:
 
-                node = component_query_nodes[0]
 
-                # Add the node
-                evidence.add_node(
-                    node,
-                    **self.graph.nodes[node]
+                self._add_node_with_neighbors(
+                    evidence,
+                    component_queries[0]
                 )
 
-                # Outgoing edges
-                for _, neighbor, key, data in self.graph.out_edges(
-                    node,
-                    keys=True,
-                    data=True,
-                ):
-                    evidence.add_node(
-                        neighbor,
-                        **self.graph.nodes[neighbor]
-                    )
-                    evidence.add_edge(
-                        node,
-                        neighbor,
-                        key=key,
-                        **data,
-                    )
-
-                # Incoming edges
-                for neighbor, _, key, data in self.graph.in_edges(
-                    node,
-                    keys=True,
-                    data=True,
-                ):
-                    evidence.add_node(
-                        neighbor,
-                        **self.graph.nodes[neighbor]
-                    )
-                    evidence.add_edge(
-                        neighbor,
-                        node,
-                        key=key,
-                        **data,
-                    )
 
                 logger.info(
-                    "Single node with neighborhood added : %s",
-                    node
+                    "Neighborhood triples added"
                 )
+
 
                 continue
 
 
 
-
             ##################################################
-            # Steiner tree
+            # CASE 2:
+            # Multiple nodes
             ##################################################
-
-            logger.info(
-                "Building Steiner Tree..."
-            )
-
 
             component_graph = (
                 undirected
@@ -284,8 +354,12 @@ class SubgraphRetriever:
             )
 
 
-
             try:
+
+                logger.info(
+                    "Building Steiner Tree"
+                )
+
 
                 with Timer(
                     logger,
@@ -293,14 +367,26 @@ class SubgraphRetriever:
                 ):
 
                     tree = steiner_tree(
-
                         component_graph,
-
-                        component_query_nodes
-
+                        component_queries
                     )
 
 
+                self._add_tree(
+                    evidence,
+                    tree
+                )
+
+
+                logger.info(
+                    "Steiner evidence added"
+                )
+
+
+
+            ##################################################
+            # Fallback
+            ##################################################
 
             except Exception as e:
 
@@ -311,91 +397,25 @@ class SubgraphRetriever:
                 )
 
 
-                continue
-
-
-
-
-            ##################################################
-            # Add nodes
-            ##################################################
-
-            for node in tree.nodes():
-
-
-                evidence.add_node(
-
-                    node,
-
-                    **self.graph.nodes[node]
-
+                logger.warning(
+                    "Using triple fallback"
                 )
 
 
+                for query_node in component_queries:
 
-            ##################################################
-            # Add edges
-            ##################################################
-
-            for u, v in tree.edges():
-
-
-
-                # original direction
-
-                if self.graph.has_edge(
-                    u,
-                    v
-                ):
-
-
-                    for _, data in self.graph[u][v].items():
-
-
-                        evidence.add_edge(
-
-                            u,
-
-                            v,
-
-                            **data
-
-                        )
-
-
-
-
-                # reverse direction
-
-                elif self.graph.has_edge(
-                    v,
-                    u
-                ):
-
-
-                    for _, data in self.graph[v][u].items():
-
-
-                        evidence.add_edge(
-
-                            v,
-
-                            u,
-
-                            **data
-
-                        )
+                    self._add_node_with_neighbors(
+                        evidence,
+                        query_node
+                    )
 
 
 
         ##################################################
-        # Final result
+        # Final
         ##################################################
 
-        logger.info(
-            "=" * 60
-        )
-
+        logger.info("=" * 60)
 
         logger.info(
             "FINAL EVIDENCE GRAPH"
@@ -414,10 +434,7 @@ class SubgraphRetriever:
         )
 
 
-        logger.info(
-            "=" * 60
-        )
-
+        logger.info("=" * 60)
 
 
         return evidence
