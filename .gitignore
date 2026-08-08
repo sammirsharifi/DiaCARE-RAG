@@ -39,3 +39,10 @@ Thumbs.db
 
 # Python package metadata
 *.egg-info/
+
+# Frontend
+**/node_modules/
+**/dist/
+
+# Project cache
+**/cache/*.pkl
